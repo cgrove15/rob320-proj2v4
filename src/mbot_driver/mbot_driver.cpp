@@ -21,109 +21,94 @@ MBotDriver::MBotDriver(std::unique_ptr<interfaces::Server> server, std::unique_p
 void MBotDriver::spin(std::unique_ptr<interfaces::Notification> notif) {
     mbot->spin();
     
-    while(true) {
+    while(!notif || !notif->is_ready()) {
 
-        //see if the signal is caught
-        if(notif->wait(rix::util::Duration(0))) {
-            break;
-        }
+        // //see if the signal is caught
+        // if(notif->wait(rix::util::Duration(0.01))) {
+        //     break;
+        // }
 
-        //accept connection
-        connection_mtx.lock();
-        if(!server->accept(connection)) {
-            connection_mtx.unlock();
-            continue;
-        }
-        connection_mtx.unlock();
-
-
-        //convert to connectiontcp
         connection_mtx.lock();
         auto shared_p = connection.lock();
         connection_mtx.unlock();
 
         if(!shared_p) {
-            continue;
-        }
+            //accept connection
 
-        //get client's remote endpoint
-        Endpoint client_ep = shared_p->remote_endpoint();
-        
-
-        //connect to the server but on port 8300
-        Endpoint server_ep;
-        server_ep.port = 8300;
-        server_ep.address = client_ep.address;
-
-        if(!client->connect(server_ep)) {
-            continue;
-        }
-
-        bool leave = false;
-        //read serializied messages
-        while(true) {
-            if(notif->wait(rix::util::Duration(0))) {
-                leave = true;
-                break;
+            connection_mtx.lock();
+            if(!server->accept(connection)) {
+                connection_mtx.unlock();
+                continue;
             }
+            connection_mtx.unlock();
 
-            //new
+
+            //convert to connectiontcp
+            connection_mtx.lock();
+            shared_p = connection.lock();
+            connection_mtx.unlock();
+
             if(!shared_p) {
-                break;
-            }
-            
-            //wait for data
-            if(!shared_p->wait_for_readable(rix::util::Duration(0))) {
-                continue;  // No data yet
-            }
-            
-            //get input size
-            uint8_t size_buf[4];
-            ssize_t num_read = shared_p->read(size_buf, 4);
-            size_t offset = 0;
-
-            //failed read data
-            if(num_read <= 0) { 
-                client->reset();
-                break;
-            }
-
-            //deserialize size
-            uint32_t size;
-            if(!rix::msg::detail::deserialize_number(size, size_buf, 4, offset)) {
                 continue;
             }
 
-            //read input data
-            std::vector<uint8_t> buff(size);
-            ssize_t data_read = shared_p->read(buff.data(), size);
+            //get client's remote endpoint
+            Endpoint client_ep = shared_p->remote_endpoint();
+            
 
-            //failed read data
-            if(data_read <= 0) {
-                client->reset();
-                break;
-            }
+            //connect to the server but on port 8300
+            Endpoint server_ep;
+            server_ep.port = 8300;
+            server_ep.address = client_ep.address;
+            client->reset();
 
-            //deseralize
-            rix::msg::geometry::Pose2DStamped bot_command;
-            offset = 0;
-            bool status = bot_command.deserialize(buff.data(), size, offset);
-
-            //send mbot commands
-            if(status) {
-                mbot->drive_to(bot_command);
-            } else {
+            if(!client->connect(server_ep)) {
                 continue;
             }
         }
+            
+        //wait for data
+        if(!client->wait_for_readable(rix::util::Duration(0.1))) {
+            client->reset();
+            continue;  // No data yet
+        }
+            
+        //get input size
+        uint8_t size_buf[4];
+        ssize_t num_read = client->read(size_buf, 4);
+        size_t offset = 0;
 
-        server->close(connection);
-        connection.reset();
-        client->reset();
+        //failed read data
+        if(num_read <= 0) { 
+            client->reset();
+            continue;
+        }
 
-        if(leave) {
+        //deserialize size
+        rix::msg::standard::UInt32 size;
+        if(!size.deserialize(size_buf, 4, offset)) {
             break;
         }
+
+        //read input data
+        std::vector<uint8_t> buff(size.data);
+        ssize_t data_read = client->read(buff.data(), size.data);
+
+        //failed read data
+        if(data_read <= 0) {
+            client->reset();
+            continue;
+        }
+
+        //deseralize
+        rix::msg::geometry::Pose2DStamped bot_command;
+        offset = 0;
+        if(!bot_command.deserialize(buff.data(), size.data, offset)) {
+            break;
+        }
+
+        //send mbot commands
+        mbot->drive_to(bot_command);
     }
 }
 

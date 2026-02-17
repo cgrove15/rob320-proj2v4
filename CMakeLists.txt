@@ -98,3 +98,13 @@ target_include_directories(lidar_driver PRIVATE include/)
 add_executable(mbot_driver src/mbot_driver/mbot_driver.cpp src/mbot_driver/main.cpp)
 target_link_libraries(mbot_driver PRIVATE project2 mbot)
 target_include_directories(mbot_driver PRIVATE include/)
+
+# Compile the MBot Driver test
+add_executable(mbot_driver_test tests/mbot_driver.cpp src/mbot_driver/mbot_driver.cpp)
+target_link_libraries(mbot_driver_test PRIVATE project2 GTest::gtest_main GTest::gmock)
+target_include_directories(mbot_driver_test PRIVATE include/)
+
+# Compile the Lidar Driver test
+add_executable(lidar_driver_test tests/lidar_driver.cpp src/lidar_driver/lidar_driver.cpp)
+target_link_libraries(lidar_driver_test PRIVATE project2 lidar GTest::gtest_main GTest::gmock)
+target_include_directories(lidar_driver_test PRIVATE include/)
